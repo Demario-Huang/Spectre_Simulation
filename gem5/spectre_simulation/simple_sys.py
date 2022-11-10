@@ -64,7 +64,9 @@ system.mem_mode = 'timing'
 system.mem_ranges = [AddrRange('512MB')]
 
 # initial the cpu
-system.cpu = TimingSimpleCPU()
+# system.cpu = TimingSimpleCPU()
+system.cpu = DerivO3CPU()
+
 
 # define the cache
 system.cpu.icache = L1ICache()

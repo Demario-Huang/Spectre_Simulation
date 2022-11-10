@@ -524,6 +524,8 @@ Fetch::lookupAndUpdateNextPC(const DynInstPtr &inst, PCStateBase &next_pc)
     ThreadID tid = inst->threadNumber;
     predict_taken = branchPred->predict(inst->staticInst, inst->seqNum,
                                         next_pc, tid);
+    uin64_t seqNum = inst->seqNum;
+
 
     if (predict_taken) {
         DPRINTF(Fetch, "[tid:%i] [sn:%llu] Branch at PC %#x "
