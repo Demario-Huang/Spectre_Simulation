@@ -63,7 +63,7 @@ system.clk_domain.voltage_domain = VoltageDomain()
 system.mem_mode = 'timing'
 system.mem_ranges = [AddrRange('512MB')]
 
-# initial the cpu
+# initial the cpu, out of order CPU model
 # system.cpu = TimingSimpleCPU()
 system.cpu = DerivO3CPU()
 
@@ -102,7 +102,7 @@ system.mem_ctrl.dram.range = system.mem_ranges[0]
 system.mem_ctrl.port = system.membus.mem_side_ports
 
 
-binary = 'spectre_simulation/test'
+binary = '/root/Project/gem5/spectre_simulation/test'
 
 # for gem5 V21 and beyond
 system.workload = SEWorkload.init_compatible(binary)
