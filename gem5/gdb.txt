@@ -1,7 +1,0 @@
-Starting program: /root/Project/gem5/build/X86/gem5.opt --debug-flag=Fetch spectre_simulation/simple_sys.py
-[Thread debugging using libthread_db enabled]
-Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
-[Inferior 1 (process 224086) exited normally]
-
-
-gdb |& tee out.log     
